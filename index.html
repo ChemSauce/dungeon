@@ -497,8 +497,12 @@
 			appId: "..."
 		};
 
-	  // Initialize Firebase
-	  firebase.initializeApp(firebaseConfig);
+		// Initialize Firebase
+		firebase.initializeApp(firebaseConfig);
+
+		// Get references to Firebase services IMMEDIATELY after init
+		let auth = firebase.auth();
+		let db = firebase.firestore();
         // --- DATA ---
         const abilities = {
             // Base Abilities

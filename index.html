@@ -108,8 +108,19 @@
 					</div>
 				</div>
 			</div>
+		</div>	
+		<div id="alpha-gate-screen">
+			<h1 class="text-3xl md:text-4xl font-bold text-center mb-2 text-yellow-400">Dungeon Crawler Alpha</h1>
+			<p class="text-center text-gray-400 mb-8">Please enter the invite code to continue.</p>
+			<div class="max-w-md mx-auto bg-gray-700 p-8 rounded-xl">
+				<div class="mb-4">
+					<label for="alpha-code" class="block text-sm font-bold mb-2">Invite Code</label>
+					<input type="password" id="alpha-code" class="w-full p-2 rounded bg-gray-800 border border-gray-600 focus:outline-none focus:border-yellow-500">
+				</div>
+				<button id="alpha-submit-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg w-full">Enter</button>
+			</div>
 		</div>
-        <div id="auth-screen">
+        <div id="auth-screen", class="hidden">
 			<h1 class="text-3xl md:text-4xl font-bold text-center mb-2 text-yellow-400">Dungeon Crawler</h1>
 			<p class="text-center text-gray-400 mb-8">Login or create an account to begin your adventure.</p>
 			<div class="max-w-md mx-auto bg-gray-700 p-8 rounded-xl">
@@ -1310,6 +1321,8 @@
 		const authScreen = document.getElementById('auth-screen');
 		const loginBtn = document.getElementById('login-btn');
 		const signupBtn = document.getElementById('signup-btn');
+		const alphaGateScreen = document.getElementById('alpha-gate-screen');
+
 
 
         // --- FUNCTIONS ---
@@ -4306,6 +4319,7 @@
 		signupBtn.addEventListener('click', handleSignUp);
 		saveGameBtn.addEventListener('click', saveGame);
 		guideCloseBtn.addEventListener('click', hideGuideModal);
+		document.getElementById('alpha-submit-btn').addEventListener('click', checkAlphaCode);
 
         function initializeGame() {
 			auth.onAuthStateChanged(user => {
@@ -4319,7 +4333,6 @@
 					// User is signed out.
 					currentUser = null;
 					player = null;
-					authScreen.classList.remove('hidden');
 					characterSelectionScreen.classList.add('hidden');
 					townScreen.classList.add('hidden');
 					mainMenuBtn.textContent = 'Main Menu';
@@ -4362,3 +4375,4 @@
 </script>
 </body>
 </html>
+

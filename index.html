@@ -2100,7 +2100,9 @@
             for (const [id, classData] of Object.entries(classes)) {
                 const card = document.createElement('div');
                 card.className = 'class-card bg-gray-700 p-6 rounded-xl text-center cursor-pointer';
-                card.innerHTML = `<div class="text-4xl mb-4">${classData.icon}</div><h3 class="text-xl font-bold mb-2">${classData.name}</h3><p class="text-sm text-gray-400">${classData.description}</p>`;
+                card.innerHTML = `<div class="text-4xl mb-4">${classData.icon}</div>
+                                <h3 class="text-xl font-bold mb-2">${classData.name}</h3>
+                                <p class="text-sm text-gray-400">${classData.description}</p>`;
                 card.onclick = () => selectClass(id);
                 selectionContainer.appendChild(card);
             }
@@ -2254,95 +2256,70 @@
         }
 
         function selectClass(classId) {
-			// Create the full player object with all necessary properties for a new character
-			const selectedClass = classes[classId];
-			player = {
-				name: selectedClass.name,
-				classId: classId,
-				subclass: null,
-				level: 1,
-				xp: 0,
-				xpNeeded: 100,
-				currentArea: 'forgotten_forest',
-				gold: Math.floor(Math.random() * 31) + 20,
-				currentHealth: selectedClass.stats.Health,
-				currentMana: selectedClass.stats.Mana,
-				equipment: { head: null, chest: null, gloves: null, legs: null, boots: null, weapon: null, offhand: null, special: null },
-				inventory: new Array(10).fill(null).map(() => ({ item: null, quantity: 0 })),
-				bank: new Array(10).fill(null).map(() => ({ item: null, quantity: 0 })),
-				bankSlots: 10,
-				abilities: [],
-				tempBuffs: [],
-				dialogInteractions: {},
-				statusEffects: [],
-				adrenalineBoost: 0,
-				activeSetBonuses: {},
-				recipes: [],
-				reputation: { factionId: null, points: 0, claimedRewards: [] },
-				quests: {},
-				achievements: { unlocked: [], claimed: [], totalPoints: 0 },
-				seenGuideMessages: []
-			};
+            // Create a fresh player object for the selected class
+            const selectedClass = classes[classId];
+            player = {
+                name: selectedClass.name,
+                classId: classId,
+                subclass: null,
+                level: 1,
+                xp: 0,
+                xpNeeded: 100,
+                currentArea: 'forgotten_forest',
+                gold: Math.floor(Math.random() * 31) + 20,
+                currentHealth: selectedClass.stats.Health,
+                currentMana: selectedClass.stats.Mana,
+                stats: { ...selectedClass.stats }, // Make sure stats for calculations
+                equipment: { head: null, chest: null, gloves: null, legs: null, boots: null, weapon: null, offhand: null, special: null },
+                inventory: new Array(10).fill(null).map(() => ({ item: null, quantity: 0 })),
+                bank: new Array(10).fill(null).map(() => ({ item: null, quantity: 0 })),
+                bankSlots: 10,
+                abilities: [],
+                quests: {},
+                activeSetBonuses: {},
+                tempBuffs: [],
+                dialogueInteractions: {},
+            };
 
-			// Initialize quests for the new player
-			for (const questId in quests) {
-				const quest = quests[questId];
-				player.quests[questId] = { isAccepted: false, isComplete: false, isTurnedIn: false };
-				if (quest.type === 'kill_any' || quest.type === 'kill_boss') {
-					player.quests[questId].progress = 0;
-				} else if (quest.type === 'kill_specific') {
-					player.quests[questId].progress = {};
-					for (const target in quest.targets) {
-						player.quests[questId].progress[target] = 0;
-					}
-				}
-			}
+            // Add starting abilities based on class
+            for (const [abilityId, abilityData] of Object.entries(abilities)) {
+                if (abilityData.class === classId && abilityData.level === 1) {
+                    player.abilities.push(abilityId);
+                }
+            }
 
-			// Add starting abilities based on class
-			for (const [abilityId, abilityData] of Object.entries(abilities)) {
-				if (abilityData.class === classId && abilityData.level === 1) {
-					player.abilities.push(abilityId);
-				}
-			}
+            // Add starting weapon based on class
+            let startingWeaponId;
+            switch (classId) {
+                case 'warrior':
+                case 'fighter':
+                    startingWeaponId = 'rusty_sword';
+                    break;
+                case 'rogue':
+                    startingWeaponId = 'rusty_dagger';
+                    break;
+                case 'wizard':
+                    startingWeaponId = 'bent_staff';
+                    break;
+            }
+            const item = { ...items[startingWeaponId] };
+            player.equipment[item.slot] = item;
+            for (const [stat, value] of Object.entries(item.stats)) {
+                player.stats[stat] += value;
+            }
 
-			// Add starting weapon based on class
-			let startingWeaponId;
-			switch (classId) {
-				case 'warrior':
-				case 'fighter':
-					startingWeaponId = 'rusty_sword';
-					break;
-				case 'rogue':
-					startingWeaponId = 'rusty_dagger';
-					break;
-				case 'wizard':
-					startingWeaponId = 'bent_staff';
-					break;
-			}
-			const item = { ...items[startingWeaponId] };
-			player.equipment[item.slot] = item;
-			for (const [stat, value] of Object.entries(item.stats)) {
-				player.stats[stat] += value;
-			}
-
-			// Save the newly created character to the Firebase database
-			db.collection('players').doc(currentUser.uid).set(player)
-				.then(() => {
-					logMessage(`Character created! Welcome, ${player.name}.`);
-					
-					// Update the UI to show the town screen
-					characterSelectionScreen.classList.add('hidden');
-					townScreen.classList.remove('hidden');
-					updateBackground(player.currentArea);
-					updatePlayerDisplay();
-					
-					// Trigger the introductory guide message
-					setTimeout(() => showGuideModal('intro'), 500);
-				})
-				.catch(error => {
-					logMessage("Error creating character: " + error.message, "text-red-400");
-				});
-		}
+            // Overwrite character data in Firebase
+            db.collection('players').doc(currentUser.uid).set(player)
+                .then(() => {
+                    logMessage(`Welcome, ${player.name}! Your adventure begins anew.`, "text-green-400");
+                    characterSelectionScreen.classList.add('hidden');
+                    townScreen.classList.remove('hidden');
+                    updatePlayerDisplay();
+                })
+                .catch(error => {
+                    logMessage("Error creating character: " + error.message, "text-red-400");
+                });
+        }
 
         function enterShop() {
 			townScreen.classList.add('hidden');
@@ -4350,9 +4327,15 @@
                 if (user) {
                     // User is signed in.
                     currentUser = user;
-                    mainMenuBtn.textContent = 'Logout'; // Change button text
-                    mainMenuBtn.onclick = handleLogout; // Change button function
-                    loadGame(); // Attempt to load their character data
+                    mainMenuBtn.textContent = 'Logout';
+                    mainMenuBtn.onclick = handleLogout;
+
+                    // Always show the class selection screen, even if character exists.
+                    characterSelectionScreen.classList.remove('hidden');
+                    townScreen.classList.add('hidden');
+                    authScreen.classList.add('hidden');
+                    alphaGateScreen.classList.add('hidden');
+                    initializeClassSelection();
                 } else {
                     // User is signed out.
                     currentUser = null;

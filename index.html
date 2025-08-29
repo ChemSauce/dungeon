@@ -3722,19 +3722,32 @@
 
         function updateQuestBoardUI() {
             const questBoardContainer = document.getElementById('quest-board-container');
+            if (!questBoardContainer) return; // Guard clause for container
+            
             questBoardContainer.innerHTML = ''; // Clear previous quest cards
+
+            // Guard clause for player and quests
+            if (!player || !player.quests) {
+                console.error('Player or player quests not initialized');
+                return;
+            }
 
             // Loop through all quests and render them for the player
             for (const [questId, questData] of Object.entries(quests)) {
                 // Defensive: Always provide a fallback if quest not initialized
-                const playerQuest = (player.quests && player.quests[questId]) ? player.quests[questId] : {
+                const playerQuest = (player.quests[questId]) ? player.quests[questId] : {
                     isAccepted: false,
                     isComplete: false,
                     isTurnedIn: false,
                     progress: 0
                 };
 
-                // Determine quest status and available actions
+                // Initialize quest in player data if it doesn't exist
+                if (!player.quests[questId]) {
+                    player.quests[questId] = { ...playerQuest };
+                }
+
+                // Rest of your quest UI rendering code...
                 let statusText = '';
                 let actions = [];
 

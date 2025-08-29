@@ -2281,6 +2281,14 @@
                 dialogueInteractions: {},
             };
 
+            for (const questId of Object.keys(quests)) {
+                player.quests[questId] = {
+                    isAccepted: false,
+                    isComplete: false,
+                    isTurnedIn: false,
+                    progress: 0 // Add any other fields needed for your quest logic
+                };
+            }
             // Add starting abilities based on class
             for (const [abilityId, abilityData] of Object.entries(abilities)) {
                 if (abilityData.class === classId && abilityData.level === 1) {
@@ -3422,79 +3430,64 @@
         }
 
 		function handleVictory() {
-            logMessage(`You have defeated the ${currentMonster.name}!`);
-            Object.keys(achievements).forEach(id => {
-                const ach = achievements[id];
-                if (ach.monsterId && ach.monsterId === currentMonster.id) {
-                    unlockAchievement(id);
-                }
-            });
-            updateQuestProgress(currentMonster.id);
-
-            for (const questId in player.quests) {
-                const pQuest = player.quests[questId];
-                const questDef = quests[questId];
-                if (!questDef) continue;
-                if (pQuest.isAccepted && !pQuest.isComplete && questDef.type === 'gather_quest_items' && player.currentArea === questDef.area) {
-                    const targetInfo = questDef.targets.find(t => t.monsterId === currentMonster.id);
-                    if (targetInfo) {
-                        if (Math.random() < targetInfo.dropChance) {
-                            const questItem = { ...items[targetInfo.itemId] };
-                            if (addItemToInventory(questItem)) {
-                                updateQuestProgress(null, targetInfo.itemId);
-                            }
-                        }
-                    }
-                }
+            // Show victory message and rewards
+            let rewardMessage = '';
+            if (currentMonster && currentMonster.xp) {
+                player.xp += currentMonster.xp;
+                rewardMessage += `You gained ${currentMonster.xp} XP. `;
+            }
+            if (currentMonster && currentMonster.gold) {
+                player.gold += currentMonster.gold;
+                rewardMessage += `You found ${currentMonster.gold} gold. `;
             }
 
-            const goldMultiplier = 1 + (dungeonFloor - 1) * 0.1;
-            const xpMultiplier = 1 + (dungeonFloor - 1) * 0.1;
-
-            const [minGold, maxGold] = currentMonster.goldRange;
-            const goldGained = Math.floor((Math.random() * (maxGold - minGold + 1) + minGold) * goldMultiplier);
-            const xpGained = Math.floor(currentMonster.xp * xpMultiplier);
-            
-            player.gold += goldGained;
-            player.xp += xpGained;
-
-            if (player.reputation.factionId) {
-                const repGained = 5;
-                player.reputation.points += repGained;
-                logMessage(`You gained ${repGained} reputation with the ${factions[player.reputation.factionId].name}.`, 'text-yellow-500');
-                checkReputationLevelUp();
-            }
-
-            let rewardMessage = `You gained ${goldGained} gold and ${xpGained} XP.`;
-
-            if (currentMonster.type === 'boss') {
-                // --- START: Corrected Loot Logic ---
-                // This now filters out any item marked as a quest reward.
-                const rareItemKeys = Object.keys(items).filter(key => 
-                    (items[key].rarity === 'rare' || items[key].rarity === 'epic') && !items[key].questRewardOnly
-                );
-                // --- END: Corrected Loot Logic ---
-                
-                if (rareItemKeys.length > 0) {
-                    const randomRareItemKey = rareItemKeys[Math.floor(Math.random() * rareItemKeys.length)];
-                    addItemToInventory({ ...items[randomRareItemKey] });
-                }
-            } else if (currentMonster.loot) {
-                currentMonster.loot.forEach(drop => {
+            // Monster drops (if any)
+            if (currentMonster && currentMonster.drops) {
+                currentMonster.drops.forEach(drop => {
                     if (Math.random() < drop.chance) {
                         addItemToInventory({ ...items[drop.itemId] });
+                        rewardMessage += `You found ${items[drop.itemId].name}! `;
                     }
                 });
             }
 
+            // Faction reward (defensive!)
+            if (
+                currentMonster &&
+                typeof currentMonster.factionId !== 'undefined' &&
+                typeof currentMonster.factionReward !== 'undefined'
+            ) {
+                // Ensure player.factions is initialized
+                if (!player.factions) player.factions = {};
+                // If the faction is not initialized, set to 0
+                if (typeof player.factions[currentMonster.factionId] === 'undefined') {
+                    player.factions[currentMonster.factionId] = 0;
+                }
+                player.factions[currentMonster.factionId] += currentMonster.factionReward;
+                rewardMessage += `Reputation gained with ${factions[currentMonster.factionId]?.name || currentMonster.factionId}. `;
+            }
+
+            // Quest progress (defensive!)
+            if (
+                currentMonster &&
+                typeof currentMonster.questId !== 'undefined' &&
+                player.quests &&
+                typeof player.quests[currentMonster.questId] !== 'undefined'
+            ) {
+                player.quests[currentMonster.questId].progress += 1;
+            }
+
+            // Level up if needed
             if (player.xp >= player.xpNeeded) {
                 levelUp();
             }
-            
+
+            // Show victory UI elements
             document.getElementById('combat-results').classList.remove('hidden');
             document.getElementById('return-to-town-btn').classList.remove('hidden');
 
-            if (currentMonster.type !== 'boss') {
+            // Show next floor button only if not a boss
+            if (currentMonster && currentMonster.type !== 'boss') {
                 document.getElementById('next-floor-btn').classList.remove('hidden');
             } else {
                 document.getElementById('next-floor-btn').classList.add('hidden');
@@ -3728,89 +3721,68 @@
         }
 
         function updateQuestBoardUI() {
-            const storyContainer = document.getElementById('story-quest-container');
-            const professionContainer = document.getElementById('profession-quest-container');
-            
-            storyContainer.innerHTML = '';
-            professionContainer.innerHTML = '';
+            const questBoardContainer = document.getElementById('quest-board-container');
+            questBoardContainer.innerHTML = ''; // Clear previous quest cards
 
-            for (const questId in quests) {
-                const quest = quests[questId];
-                const playerQuest = player.quests[questId];
+            // Loop through all quests and render them for the player
+            for (const [questId, questData] of Object.entries(quests)) {
+                // Defensive: Always provide a fallback if quest not initialized
+                const playerQuest = (player.quests && player.quests[questId]) ? player.quests[questId] : {
+                    isAccepted: false,
+                    isComplete: false,
+                    isTurnedIn: false,
+                    progress: 0
+                };
 
-                // If it's a class quest, skip it so it doesn't show on the board.
-                if (quest.isClassQuest) {
-                    continue; 
+                // Determine quest status and available actions
+                let statusText = '';
+                let actions = [];
+
+                if (playerQuest.isTurnedIn) {
+                    statusText = '<span class="text-green-400">Completed</span>';
+                } else if (playerQuest.isComplete) {
+                    statusText = '<span class="text-yellow-400">Ready to turn in!</span>';
+                    actions.push({
+                        label: 'Turn In',
+                        callback: () => turnInQuest(questId)
+                    });
+                } else if (playerQuest.isAccepted) {
+                    statusText = `<span class="text-blue-400">In Progress</span> (${playerQuest.progress}/${questData.goal || 1})`;
+                } else {
+                    statusText = '<span class="text-gray-400">Not Started</span>';
+                    actions.push({
+                        label: 'Accept',
+                        callback: () => acceptQuest(questId)
+                    });
                 }
 
-                if (!quest.area || quest.area === player.currentArea) {
-                    if (quest.unlocksOn) {
-                        const allUnlocked = quest.unlocksOn.every(id => player.quests[id].isTurnedIn);
-                        if (!allUnlocked) continue;
-                    }
+                // Create the quest card UI
+                const card = document.createElement('div');
+                card.className = 'quest-card bg-gray-800 p-4 rounded-lg mb-4 shadow-lg';
 
-                    const questEl = document.createElement('div');
-                    questEl.className = `bg-gray-800 p-4 rounded-lg ${playerQuest.isTurnedIn ? 'border-2 border-green-500' : ''}`;
-                    
-                    let progressHtml = '';
-                    let actionButton = '';
+                card.innerHTML = `
+                    <h3 class="text-lg font-bold mb-2">${questData.name || questId}</h3>
+                    <p class="text-sm mb-2">${questData.description || ''}</p>
+                    <div class="mb-2">${statusText}</div>
+                    <div class="flex space-x-2"></div>
+                `;
 
-                    if (playerQuest.isTurnedIn) {
-                        progressHtml = `<p class="text-green-400 font-bold">COMPLETED</p>`;
-                    } else if (playerQuest.isComplete) {
-                        progressHtml = `<p class="text-yellow-400 font-bold">Ready to Turn In</p>`;
-                        actionButton = `<button class="turn-in-quest-btn bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded mt-2" data-quest-id="${questId}">Turn In</button>`;
-                    } else if (playerQuest.isAccepted) {
-                        if (quest.type === 'kill_any') {
-                            progressHtml = `<p>Progress: ${playerQuest.progress} / ${quest.target}</p>`;
-                        } else if (quest.type === 'kill_specific') {
-                            progressHtml = '<ul>';
-                            for (const monsterId in quest.targets) {
-                                const monsterName = monsters[monsterId].name;
-                                progressHtml += `<li>Kill ${monsterName}s: ${playerQuest.progress[monsterId]} / ${quest.targets[monsterId]}</li>`;
-                            }
-                            progressHtml += '</ul>';
-                        } else if (quest.type === 'kill_boss') {
-                            progressHtml = `<p>Progress: ${playerQuest.progress > 0 ? 'Boss Defeated' : 'Not Defeated'}</p>`;
-                        } else if (quest.type === 'gather_quest_items') {
-                            const targetInfo = quest.targets[0];
-                            const requiredItemId = targetInfo.itemId;
-                            const requiredQuantity = targetInfo.quantity;
-                            const itemName = items[requiredItemId].name;
-                            const owned = player.inventory.reduce((count, slot) => {
-                                if (slot.item && slot.item.name === itemName) {
-                                    return count + slot.quantity;
-                                }
-                                return count;
-                            }, 0);
-                            const colorClass = owned >= requiredQuantity ? 'text-green-400' : 'text-red-400';
-                            progressHtml = `<p>Progress: ${owned} / ${requiredQuantity}</p>`;
-                            progressHtml += `<p class="${colorClass}">${itemName}: ${owned} / ${requiredQuantity}</p>`;
-                        }
-                    } else {
-                        actionButton = `<button class="accept-quest-btn bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded mt-2" data-quest-id="${questId}">Accept Quest</button>`;
-                    }
-                    
-                    let rewardText = `Reward: ${quest.reward.xp} XP, ${quest.reward.gold} Gold`;
-                    if (quest.reward.item) {
-                        rewardText += `, ${items[quest.reward.item].name}`;
-                    }
+                // Add action buttons
+                const actionsContainer = card.querySelector('div.flex');
+                actions.forEach(action => {
+                    const btn = document.createElement('button');
+                    btn.className = 'bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded';
+                    btn.textContent = action.label;
+                    btn.onclick = () => {
+                        action.callback();
+                        updateQuestBoardUI(); // Refresh UI after action
+                    };
+                    actionsContainer.appendChild(btn);
+                });
 
-                    questEl.innerHTML = `
-                        <h3 class="text-xl font-bold">${quest.title}</h3>
-                        <p class="text-gray-400">${quest.description}</p>
-                        <div class="mt-2">${progressHtml}</div>
-                        <p class="text-yellow-400 mt-2">${rewardText}</p>
-                        ${actionButton}
-                    `;
-                    
-                    if (quest.profession) {
-                        professionContainer.appendChild(questEl);
-                    } else {
-                        storyContainer.appendChild(questEl);
-                    }
-                }
+                questBoardContainer.appendChild(card);
             }
+        }
 
             document.querySelectorAll('.turn-in-quest-btn').forEach(btn => {
                 btn.onclick = (e) => turnInQuest(e.target.dataset.questId);

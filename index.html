@@ -4186,6 +4186,8 @@
 						logMessage("No character found. Please create a new hero.", "text-yellow-400");
 						authScreen.classList.add('hidden');
 						characterSelectionScreen.classList.remove('hidden');
+						
+						initializeClassSelection();
 					}
 				})
 				.catch(error => {

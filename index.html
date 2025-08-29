@@ -4163,37 +4163,46 @@
 		}
 
         function loadGame() {
-			if (!currentUser) return;
+                if (!currentUser) return;
 
-			db.collection('players').doc(currentUser.uid).get()
-				.then(doc => {
-					if (doc.exists) {
-						player = doc.data();
-						// All your compatibility checks from before can go here
-						if (!player.bank) { player.bank = new Array(10).fill(null).map(() => ({ item: null, quantity: 0 })); player.bankSlots = 10; }
-						if (!player.seenGuideMessages) { player.seenGuideMessages = []; }
-						// etc.
+                db.collection('players').doc(currentUser.uid).get()
+                    .then(doc => {
+                        if (doc.exists) {
+                            // --- EXISTING PLAYER ---
+                            player = doc.data();
 
-						logMessage("Game Loaded from Cloud!", "text-green-400");
-						authScreen.classList.add('hidden');
-						characterSelectionScreen.classList.add('hidden');
-						townScreen.classList.remove('hidden');
-						updateSetBonuses();
-						updateBackground(player.currentArea);
-						updatePlayerDisplay();
-					} else {
-						// This user is logged in but has no character yet.
-						logMessage("No character found. Please create a new hero.", "text-yellow-400");
-						authScreen.classList.add('hidden');
-						characterSelectionScreen.classList.remove('hidden');
-						
-						initializeClassSelection();
-					}
-				})
-				.catch(error => {
-					logMessage("Error loading game: " + error.message, "text-red-400");
-				});
-		}
+                            // Compatibility checks for older save files
+                            if (!player.bank) { 
+                                player.bank = new Array(10).fill(null).map(() => ({ item: null, quantity: 0 })); 
+                                player.bankSlots = 10; 
+                            }
+                            if (!player.seenGuideMessages) { 
+                                player.seenGuideMessages = []; 
+                            }
+                            
+                            logMessage("Game Loaded from Cloud!", "text-green-400");
+
+                            // Update UI for existing player
+                            authScreen.classList.add('hidden');
+                            characterSelectionScreen.classList.add('hidden');
+                            townScreen.classList.remove('hidden');
+                            updateSetBonuses();
+                            updateBackground(player.currentArea);
+                            updatePlayerDisplay();
+                        } else {
+                            // --- NEW PLAYER ---
+                            logMessage("No character found. Please create a new hero.", "text-yellow-400");
+
+                            // Update UI for new player
+                            authScreen.classList.add('hidden');
+                            characterSelectionScreen.classList.remove('hidden');
+                            initializeClassSelection(); // This populates the screen with choices
+                        }
+                    })
+                    .catch(error => {
+                        logMessage("Error loading game: " + error.message, "text-red-400");
+                    });
+        }
 
         // --- INITIALIZATION ---
 		
@@ -4337,24 +4346,28 @@
 		document.getElementById('alpha-submit-btn').addEventListener('click', checkAlphaCode);
 
         function initializeGame() {
-			auth.onAuthStateChanged(user => {
-				if (user) {
-					// User is signed in.
-					currentUser = user;
-					mainMenuBtn.textContent = 'Logout'; // Change button text
-					mainMenuBtn.onclick = handleLogout; // Change button function
-					loadGame(); // Attempt to load their character data
-				} else {
-					// User is signed out.
-					currentUser = null;
-					player = null;
-					characterSelectionScreen.classList.add('hidden');
-					townScreen.classList.add('hidden');
-					mainMenuBtn.textContent = 'Main Menu';
-					mainMenuBtn.onclick = () => window.location.reload();
-				}
-			});
-		}
+            auth.onAuthStateChanged(user => {
+                if (user) {
+                    // User is signed in.
+                    currentUser = user;
+                    mainMenuBtn.textContent = 'Logout'; // Change button text
+                    mainMenuBtn.onclick = handleLogout; // Change button function
+                    loadGame(); // Attempt to load their character data
+                } else {
+                    // User is signed out.
+                    currentUser = null;
+                    player = null;
+                    mainMenuBtn.textContent = 'Main Menu';
+                    mainMenuBtn.onclick = () => window.location.reload();
+
+                    // Hide all game screens and show the initial alpha gate screen
+                    characterSelectionScreen.classList.add('hidden');
+                    townScreen.classList.add('hidden');
+                    authScreen.classList.add('hidden');
+                    alphaGateScreen.classList.remove('hidden');
+                }
+            });
+        }
 
         window.onload = initializeGame;
     </script>

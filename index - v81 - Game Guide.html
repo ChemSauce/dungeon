@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dungeon Crawler - Town</title>
     <script src="https://cdn.tailwindcss.com"></script>
+	<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+	<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+	<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
@@ -106,13 +109,28 @@
 				</div>
 			</div>
 		</div>
-        
+        <div id="auth-screen">
+			<h1 class="text-3xl md:text-4xl font-bold text-center mb-2 text-yellow-400">Dungeon Crawler</h1>
+			<p class="text-center text-gray-400 mb-8">Login or create an account to begin your adventure.</p>
+			<div class="max-w-md mx-auto bg-gray-700 p-8 rounded-xl">
+				<div class="mb-4">
+					<label for="email" class="block text-sm font-bold mb-2">Email</label>
+					<input type="email" id="email" class="w-full p-2 rounded bg-gray-800 border border-gray-600 focus:outline-none focus:border-yellow-500">
+				</div>
+				<div class="mb-6">
+					<label for="password" class="block text-sm font-bold mb-2">Password</label>
+					<input type="password" id="password" class="w-full p-2 rounded bg-gray-800 border border-gray-600 focus:outline-none focus:border-yellow-500">
+				</div>
+				<div class="flex items-center justify-between gap-4">
+					<button id="login-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg w-full">Login</button>
+					<button id="signup-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg w-full">Sign Up</button>
+				</div>
+			</div>
+		</div>
+		
         <div id="character-selection-screen">
             <h1 class="text-3xl md:text-4xl font-bold text-center mb-2 text-yellow-400">Choose Your Hero</h1>
             <p class="text-center text-gray-400 mb-8">Your legend begins now. Select a class to start your journey.</p>
-            <div class="text-center mb-8">
-                <button id="load-game-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed" disabled>Load Game</button>
-            </div>
             <div id="class-selection-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"></div>
         </div>
 
@@ -1242,6 +1260,9 @@
         };
         
         let player = null;
+		let auth = firebase.auth();
+		let db = firebase.firestore();
+		let currentUser = null;
         let shopInventory = [];
         let currentMonster = null;
         let dungeonFloor = 1;
@@ -1286,8 +1307,76 @@
 		const buyBankSlotBtn = document.getElementById('buy-bank-slot-btn');
 		const guideModal = document.getElementById('guide-modal');
 		const guideCloseBtn = document.getElementById('guide-close-btn');
+		const authScreen = document.getElementById('auth-screen');
+		const loginBtn = document.getElementById('login-btn');
+		const signupBtn = document.getElementById('signup-btn');
+
 
         // --- FUNCTIONS ---
+		
+		// --- START: NEW AUTHENTICATION FUNCTIONS ---
+
+		function handleSignUp() {
+			const email = document.getElementById('email').value;
+			const password = document.getElementById('password').value;
+			if (!email || password.length < 6) {
+				logMessage("Please enter a valid email and a password of at least 6 characters.", "text-red-400");
+				return;
+			}
+			auth.createUserWithEmailAndPassword(email, password)
+				.then(userCredential => {
+					logMessage(`Account created for ${userCredential.user.email}!`, "text-green-400");
+					// The onAuthStateChanged listener will handle showing the character screen.
+				})
+				.catch(error => {
+					logMessage(error.message, "text-red-400");
+				});
+		}
+
+		function handleLogin() {
+			const email = document.getElementById('email').value;
+			const password = document.getElementById('password').value;
+			auth.signInWithEmailAndPassword(email, password)
+				.catch(error => {
+					logMessage(error.message, "text-red-400");
+				});
+		}
+
+		function handleLogout() {
+			auth.signOut().then(() => {
+				window.location.reload();
+			});
+		}
+
+		// --- END: NEW AUTHENTICATION FUNCTIONS ---
+		
+		function checkAlphaCode() {
+			const enteredCode = document.getElementById('alpha-code').value;
+			if (!enteredCode) {
+				logMessage("Please enter an invite code.", "text-red-400");
+				return;
+			}
+
+			// Ask the database for the correct code
+			db.collection('config').get().then(querySnapshot => {
+				let isValid = false;
+				querySnapshot.forEach(doc => {
+					// Check if the entered code matches the one in the database
+					if (doc.data().inviteCode === enteredCode) {
+						isValid = true;
+					}
+				});
+
+				if (isValid) {
+					alphaGateScreen.classList.add('hidden');
+					authScreen.classList.remove('hidden'); // Show the real login screen
+				} else {
+					logMessage("Incorrect invite code.", "text-red-400");
+				}
+			}).catch(error => {
+				logMessage("Error checking code: " + error.message, "text-red-400");
+			});
+		}
         function logMessage(message, color = 'text-gray-300') {
             const logEntry = document.createElement('p');
             logEntry.className = color;
@@ -1295,6 +1384,7 @@
             gameLog.appendChild(logEntry);
             gameLog.scrollTop = gameLog.scrollHeight;
         }
+	
 
         function updateBackground(areaId) {
             const allTextures = Object.values(areas).map(area => area.backgroundTexture);
@@ -2138,9 +2228,10 @@
         }
 
         function selectClass(classId) {
+			// Create the full player object with all necessary properties for a new character
 			const selectedClass = classes[classId];
 			player = {
-				...selectedClass,
+				name: selectedClass.name,
 				classId: classId,
 				subclass: null,
 				level: 1,
@@ -2161,21 +2252,12 @@
 				adrenalineBoost: 0,
 				activeSetBonuses: {},
 				recipes: [],
-				reputation: {
-					factionId: null,
-					points: 0,
-					claimedRewards: []
-				},
+				reputation: { factionId: null, points: 0, claimedRewards: [] },
 				quests: {},
-				achievements: {
-					unlocked: [],
-					claimed: [],
-					totalPoints: 0
-				},
-				// This line is crucial for the guide system
+				achievements: { unlocked: [], claimed: [], totalPoints: 0 },
 				seenGuideMessages: []
 			};
-			
+
 			// Initialize quests for the new player
 			for (const questId in quests) {
 				const quest = quests[questId];
@@ -2190,15 +2272,14 @@
 				}
 			}
 
-
+			// Add starting abilities based on class
 			for (const [abilityId, abilityData] of Object.entries(abilities)) {
 				if (abilityData.class === classId && abilityData.level === 1) {
 					player.abilities.push(abilityId);
 				}
 			}
 
-			logMessage(`You have chosen the path of the ${player.name}.`);
-			
+			// Add starting weapon based on class
 			let startingWeaponId;
 			switch (classId) {
 				case 'warrior':
@@ -2212,22 +2293,29 @@
 					startingWeaponId = 'bent_staff';
 					break;
 			}
-
 			const item = { ...items[startingWeaponId] };
-
 			player.equipment[item.slot] = item;
 			for (const [stat, value] of Object.entries(item.stats)) {
 				player.stats[stat] += value;
 			}
 
-			logMessage(`You start your journey with a ${item.name}.`);
-			characterSelectionScreen.classList.add('hidden');
-			townScreen.classList.remove('hidden');
-			updateBackground(player.currentArea);
-			updatePlayerDisplay();
-
-			// This line triggers the guide for new characters
-			setTimeout(() => showGuideModal('intro'), 500);
+			// Save the newly created character to the Firebase database
+			db.collection('players').doc(currentUser.uid).set(player)
+				.then(() => {
+					logMessage(`Character created! Welcome, ${player.name}.`);
+					
+					// Update the UI to show the town screen
+					characterSelectionScreen.classList.add('hidden');
+					townScreen.classList.remove('hidden');
+					updateBackground(player.currentArea);
+					updatePlayerDisplay();
+					
+					// Trigger the introductory guide message
+					setTimeout(() => showGuideModal('intro'), 500);
+				})
+				.catch(error => {
+					logMessage("Error creating character: " + error.message, "text-red-400");
+				});
 		}
 
         function enterShop() {
@@ -4035,97 +4123,48 @@
         }
 
         function saveGame() {
-            if (!player) {
-                logMessage("No game to save.", "text-yellow-400");
-                return;
-            }
-            localStorage.setItem('dungeonCrawlerSave', JSON.stringify(player));
-            logMessage("Game Saved!", "text-green-400");
-        }
+			if (!player || !currentUser) {
+				logMessage("No game to save.", "text-yellow-400");
+				return;
+			}
+			db.collection('players').doc(currentUser.uid).set(player)
+				.then(() => {
+					logMessage("Game Saved to Cloud!", "text-green-400");
+				})
+				.catch(error => {
+					logMessage("Error saving game: " + error.message, "text-red-400");
+				});
+		}
 
         function loadGame() {
-			const savedGame = localStorage.getItem('dungeonCrawlerSave');
-			if (savedGame) {
-				player = JSON.parse(savedGame);
-				
-				// --- Compatibility Checks for Older Save Files ---
+			if (!currentUser) return;
 
-				// Check for dialogue interactions object
-				player.dialogueInteractions = player.dialogueInteractions || {};
+			db.collection('players').doc(currentUser.uid).get()
+				.then(doc => {
+					if (doc.exists) {
+						player = doc.data();
+						// All your compatibility checks from before can go here
+						if (!player.bank) { player.bank = new Array(10).fill(null).map(() => ({ item: null, quantity: 0 })); player.bankSlots = 10; }
+						if (!player.seenGuideMessages) { player.seenGuideMessages = []; }
+						// etc.
 
-				// Check for and convert old inventory format (array of items) to new format (array of slot objects)
-				if (player.inventory.length > 0 && !player.inventory[0].hasOwnProperty('item')) {
-					player.inventory = player.inventory.map(item => ({ item: item, quantity: item ? 1 : 0 }));
-					// Ensure inventory has the correct number of slots if it was from an even older version
-					while (player.inventory.length < 10) {
-						player.inventory.push({ item: null, quantity: 0 });
+						logMessage("Game Loaded from Cloud!", "text-green-400");
+						authScreen.classList.add('hidden');
+						characterSelectionScreen.classList.add('hidden');
+						townScreen.classList.remove('hidden');
+						updateSetBonuses();
+						updateBackground(player.currentArea);
+						updatePlayerDisplay();
+					} else {
+						// This user is logged in but has no character yet.
+						logMessage("No character found. Please create a new hero.", "text-yellow-400");
+						authScreen.classList.add('hidden');
+						characterSelectionScreen.classList.remove('hidden');
 					}
-				}
-
-				// Check for reputation system
-				if (!player.reputation) {
-					player.reputation = { factionId: null, points: 0, claimedRewards: [] };
-				}
-
-				// Check for adrenaline boost tracking
-				if (!player.adrenalineBoost) {
-					player.adrenalineBoost = 0;
-				}
-
-				// Check for subclass system
-				 if (!player.hasOwnProperty('subclass')) {
-					player.subclass = null;
-				}
-
-				// Check for quest system and initialize if missing
-				if (!player.quests) {
-					player.quests = {};
-					 for (const questId in quests) {
-						const quest = quests[questId];
-						player.quests[questId] = { isAccepted: false, isComplete: false, isTurnedIn: false };
-						if (quest.type === 'kill_any' || quest.type === 'kill_boss') {
-							player.quests[questId].progress = 0;
-						} else if (quest.type === 'kill_specific') {
-							player.quests[questId].progress = {};
-							for (const target in quest.targets) {
-								player.quests[questId].progress[target] = 0;
-							}
-						}
-					}
-				}
-				
-				// Check for achievement system
-				if (!player.achievements || Array.isArray(player.achievements)) {
-					player.achievements = {
-						unlocked: [],
-						claimed: [],
-						totalPoints: 0
-					};
-				}
-				
-				// Check for the bank system
-				if (!player.bank) {
-					player.bank = new Array(10).fill(null).map(() => ({ item: null, quantity: 0 }));
-					player.bankSlots = 10;
-				}
-
-				// Check for the guide NPC system
-				if (!player.seenGuideMessages) {
-					player.seenGuideMessages = [];
-				}
-
-				// --- End Compatibility Checks ---
-
-				logMessage("Game Loaded!", "text-green-400");
-				characterSelectionScreen.classList.add('hidden');
-				townScreen.classList.remove('hidden');
-				updateSetBonuses(); // Recalculate set bonuses on load
-				updateBackground(player.currentArea);
-				updatePlayerDisplay();
-				checkGuideTriggers(); // Check if any level-based guide messages should appear
-			} else {
-				logMessage("No saved game found.", "text-yellow-400");
-			}
+				})
+				.catch(error => {
+					logMessage("Error loading game: " + error.message, "text-red-400");
+				});
 		}
 
         // --- INITIALIZATION ---
@@ -4262,23 +4301,64 @@
             questBoardScreen.classList.add('hidden');
             innScreen.classList.remove('hidden');
         });
-        loadGameBtn.addEventListener('click', loadGame);
-        saveGameBtn.addEventListener('click', saveGame);
-        mainMenuBtn.addEventListener('click', () => {
-            window.location.reload();
-        });
-		
+        
+		loginBtn.addEventListener('click', handleLogin);
+		signupBtn.addEventListener('click', handleSignUp);
+		saveGameBtn.addEventListener('click', saveGame);
 		guideCloseBtn.addEventListener('click', hideGuideModal);
 
         function initializeGame() {
-            if (localStorage.getItem('dungeonCrawlerSave')) {
-                document.getElementById('load-game-btn').disabled = false;
-            }
-            initializeClassSelection();
-            logMessage("Welcome, adventurer!");
-        }
+			auth.onAuthStateChanged(user => {
+				if (user) {
+					// User is signed in.
+					currentUser = user;
+					mainMenuBtn.textContent = 'Logout'; // Change button text
+					mainMenuBtn.onclick = handleLogout; // Change button function
+					loadGame(); // Attempt to load their character data
+				} else {
+					// User is signed out.
+					currentUser = null;
+					player = null;
+					authScreen.classList.remove('hidden');
+					characterSelectionScreen.classList.add('hidden');
+					townScreen.classList.add('hidden');
+					mainMenuBtn.textContent = 'Main Menu';
+					mainMenuBtn.onclick = () => window.location.reload();
+				}
+			});
+		}
 
         window.onload = initializeGame;
     </script>
+	<script>
+// Import the functions you need from the SDKs you need
+	import { initializeApp } from "firebase/app";
+	// TODO: Add SDKs for Firebase products that you want to use
+	// https://firebase.google.com/docs/web/setup#available-libraries
+
+	// Your web app's Firebase configuration
+	const firebaseConfig = {
+	  apiKey: "AIzaSyDhB_WzVqo-NCCd1GCo7k7VqBXyE-qfi4Y",
+	  authDomain: "dungeon-crawler-91f11.firebaseapp.com",
+	  projectId: "dungeon-crawler-91f11",
+	  storageBucket: "dungeon-crawler-91f11.firebasestorage.app",
+	  messagingSenderId: "448104945557",
+	  appId: "1:448104945557:web:346b8178b6c86e0b7e489c"
+	};
+
+	// Initialize Firebase
+	const app = initializeApp(firebaseConfig);  
+	const firebaseConfig = {
+		apiKey: "AIza...",
+		authDomain: "your-project-name.firebaseapp.com",
+		projectId: "your-project-name",
+		storageBucket: "your-project-name.appspot.com",
+		messagingSenderId: "...",
+		appId: "..."
+	};
+
+  // Initialize Firebase
+  firebase.initializeApp(firebaseConfig);
+</script>
 </body>
 </html>
